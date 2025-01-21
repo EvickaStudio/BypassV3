@@ -8,6 +8,17 @@ Just a simple ReCaptcha v3 bypass that returns the `X-RECAPTCHA-TOKEN` token fro
 - requests
 - re (regex)
 
+## Disclaimer
+
+This program is intended for educational and testing purposes only.
+Any misuse or illegal activity using this code is strictly prohibited.
+The authors assume no liability for any damage or legal consequences caused by the use of this software.
+
+**Additional Disclaimer**:
+This software is provided “as is,” without warranty of any kind.
+The authors are not responsible for any direct, indirect, incidental, or consequential damages arising from its use or the inability to use it.
+Use at your own risk.
+
 ## Usage
 
 ```python
@@ -28,3 +39,7 @@ gtk = bypass.bypass()
 # Or you can just call it like this
 gtk = ReCaptchaV3Bypass(url).bypass()
 ```
+
+## License
+
+This project is licensed under the AGPLv3 License - see the [LICENSE](LICENSE) file for details.
