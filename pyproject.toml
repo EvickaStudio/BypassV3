@@ -5,5 +5,6 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "blackboxprotobuf>=1.0.1",
     "requests>=2.34.2",
 ]

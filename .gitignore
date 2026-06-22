@@ -172,3 +172,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Personal captured data — do not commit
+fingerprint.json
+*.har
+tests/har/*
+!tests/har/.gitkeep
+tests/fixtures/*
+!tests/fixtures/.gitkeep
