@@ -9,6 +9,7 @@ a higher score than the form-encoded fallback.
 Usage:
     uv run python extract_fingerprint.py tests/fixtures/reload_req.bin fingerprint.json
 """
+
 import json
 import sys
 from pathlib import Path

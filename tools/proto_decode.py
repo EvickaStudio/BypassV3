@@ -6,6 +6,7 @@ Usage:
     uv run python proto_decode.py tests/fixtures/reload_req.bin
     uv run python proto_decode.py tests/fixtures/reload_req.bin out.json
 """
+
 import json
 import sys
 from contextlib import suppress
@@ -37,16 +38,16 @@ def decode(buf: bytes, depth: int = 0) -> list[tuple[int, int, object]]:
             val, pos = read_varint(buf, pos)
             out.append((field, wire, val))
         elif wire == 1:  # fixed64
-            val = int.from_bytes(buf[pos:pos + 8], "little")
+            val = int.from_bytes(buf[pos : pos + 8], "little")
             pos += 8
             out.append((field, wire, val))
         elif wire == 2:  # length-delimited
             ln, pos = read_varint(buf, pos)
-            data = buf[pos:pos + ln]
+            data = buf[pos : pos + ln]
             pos += ln
             out.append((field, wire, data))
         elif wire == 5:  # fixed32
-            val = int.from_bytes(buf[pos:pos + 4], "little")
+            val = int.from_bytes(buf[pos : pos + 4], "little")
             pos += 4
             out.append((field, wire, val))
         else:
@@ -67,9 +68,11 @@ def parse_field(data: bytes) -> object:
     # Try utf-8 string if mostly printable
     with suppress(UnicodeDecodeError):
         s = data.decode("utf-8")
-        if s and all(31 < ord(c) < 0x110000 for c in s) and sum(
-            32 <= ord(c) < 127 for c in s
-        ) / max(len(s), 1) > 0.85:
+        if (
+            s
+            and all(31 < ord(c) < 0x110000 for c in s)
+            and sum(32 <= ord(c) < 127 for c in s) / max(len(s), 1) > 0.85
+        ):
             return s
     return {"_hex": data.hex(), "_len": len(data)}
 
@@ -91,7 +94,9 @@ def _len_of_entry(entry) -> int:
 
 def parse_entry(entry) -> dict:
     field, wire, val = entry
-    parsed = parse_field(val) if wire == 2 and isinstance(val, (bytes, bytearray)) else val
+    parsed = (
+        parse_field(val) if wire == 2 and isinstance(val, (bytes, bytearray)) else val
+    )
     return {"field": field, "wire": wire, "value": parsed}
 
 

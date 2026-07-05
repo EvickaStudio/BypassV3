@@ -15,6 +15,7 @@ Usage:
     uv run python tools/generate_fingerprint.py fingerprint.json
     uv run python tools/generate_fingerprint.py fingerprint.json --seed 42
 """
+
 import argparse
 import base64
 import json
@@ -51,7 +52,12 @@ def gen_field_20(rng: random.Random) -> str:
         [[5006, 44], [64607, 1], [35837, 1]],
         None,
         [None, None, None, inner],
-        ["2captcha.com", "static.cloudflareinsights.com", "www.google.com", "www.gstatic.com"],
+        [
+            "2captcha.com",
+            "static.cloudflareinsights.com",
+            "www.google.com",
+            "www.gstatic.com",
+        ],
         [1, 440],
     ]
     return _b64(json.dumps(data, separators=(",", ":")))
@@ -59,7 +65,7 @@ def gen_field_20(rng: random.Random) -> str:
 
 def gen_field_25(rng: random.Random) -> str:
     """Event sequence array. Decodes to JSON like:
-        [[[<event_id>,<delta>],[<event_id>,<delta>],[<event_id>,<delta>]]]
+    [[[<event_id>,<delta>],[<event_id>,<delta>],[<event_id>,<delta>]]]
     """
     events = []
     t = 0
