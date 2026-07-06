@@ -77,6 +77,17 @@ def parse_reload_response(text: str) -> str | None:
     return None
 
 
+def reload_url_from_anchor(anchor_url: str, k_value: str) -> str:
+    parsed = urlparse(anchor_url)
+    family = "enterprise" if "/enterprise/" in parsed.path else "api2"
+    host = parsed.hostname or "www.google.com"
+    if host not in {"www.google.com", "www.recaptcha.net"} and not host.endswith(
+        ".google.com"
+    ):
+        raise ValueError(f"unsupported reCAPTCHA host: {host}")
+    return f"https://{host}/recaptcha/{family}/reload?k={k_value}"
+
+
 class ReCaptchaV3Bypass:
     """Fetch a reCAPTCHA v3 reload token, retrying with a fresh anchor token."""
 
@@ -135,8 +146,10 @@ class ReCaptchaV3Bypass:
             print(f"Failed to send GET request: {e}")
             return None
 
-    def _do_reload(self, recaptcha_token, k_value, co_value, v_value, hl_value) -> str | None:
-        post_url = f"https://www.google.com/recaptcha/api2/reload?k={k_value}"
+    def _do_reload(
+        self, recaptcha_token, k_value, co_value, v_value, hl_value
+    ) -> str | None:
+        post_url = reload_url_from_anchor(self.target_url, k_value)
 
         # Protobuf embeds action in the token; form mode is only the no-action fallback.
         if self.action or self.fingerprint:

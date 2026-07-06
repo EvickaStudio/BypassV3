@@ -9,6 +9,7 @@ Usage:
 
 Output goes to tests/fixtures/ (or the path given via --out).
 """
+
 import argparse
 import base64
 import json
@@ -74,8 +75,14 @@ def process_har(har_path: Path, out_dir: Path, seen: set) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("har_files", nargs="*", help="HAR files to process (default: tests/har/*.har)")
-    p.add_argument("--out", default="tests/fixtures", help="output directory (default: tests/fixtures)")
+    p.add_argument(
+        "har_files", nargs="*", help="HAR files to process (default: tests/har/*.har)"
+    )
+    p.add_argument(
+        "--out",
+        default="tests/fixtures",
+        help="output directory (default: tests/fixtures)",
+    )
     args = p.parse_args()
 
     out_dir = Path(args.out)
@@ -88,7 +95,9 @@ def main() -> None:
         har_paths = sorted(har_dir.glob("*.har"))
 
     if not har_paths:
-        print("No HAR files found. Place .har files in tests/har/ or pass paths as arguments.")
+        print(
+            "No HAR files found. Place .har files in tests/har/ or pass paths as arguments."
+        )
         return
 
     seen: set = set()

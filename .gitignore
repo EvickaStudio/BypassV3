@@ -176,6 +176,8 @@ cython_debug/
 # Personal captured data — do not commit
 fingerprint.json
 *.har
+experiment/recaptcha__de.js
+experiment/recaptcha_deob_online.js
 tests/har/*
 !tests/har/.gitkeep
 tests/fixtures/*

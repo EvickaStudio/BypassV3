@@ -80,8 +80,16 @@ def js_escaped_to_bytes(text: str) -> bytes:
                 i += 4
                 continue
             simple = {
-                "n": 0x0A, "r": 0x0D, "t": 0x09, "b": 0x08, "f": 0x0C,
-                "0": 0x00, "\\": 0x5C, "/": 0x2F, '"': 0x22, "'": 0x27,
+                "n": 0x0A,
+                "r": 0x0D,
+                "t": 0x09,
+                "b": 0x08,
+                "f": 0x0C,
+                "0": 0x00,
+                "\\": 0x5C,
+                "/": 0x2F,
+                '"': 0x22,
+                "'": 0x27,
             }
             if nxt in simple:
                 out.append(simple[nxt])
@@ -128,7 +136,9 @@ def _print_value(value, ftype, pad, field_name=""):
                 print(f"{pad}{label}: {text!r} (utf-8)")
                 return
         preview = value[:80].hex()
-        print(f"{pad}{label}: <bytes len={len(value)}> {preview}{'...' if len(value) > 80 else ''}")
+        print(
+            f"{pad}{label}: <bytes len={len(value)}> {preview}{'...' if len(value) > 80 else ''}"
+        )
     else:
         shown = repr(value)
         if len(shown) > 200:
