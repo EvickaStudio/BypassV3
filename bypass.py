@@ -80,7 +80,11 @@ def parse_reload_response(text: str) -> str | None:
 def reload_url_from_anchor(anchor_url: str, k_value: str) -> str:
     parsed = urlparse(anchor_url)
     family = "enterprise" if "/enterprise/" in parsed.path else "api2"
-    host = parsed.netloc or "www.google.com"
+    host = parsed.hostname or "www.google.com"
+    if host not in {"www.google.com", "www.recaptcha.net"} and not host.endswith(
+        ".google.com"
+    ):
+        raise ValueError(f"unsupported reCAPTCHA host: {host}")
     return f"https://{host}/recaptcha/{family}/reload?k={k_value}"
 
 

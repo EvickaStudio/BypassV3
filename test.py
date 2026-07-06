@@ -79,7 +79,7 @@ def site_key_from(anchor_url: str) -> str:
     return parse_qs(urlparse(anchor_url).query)["k"][0]
 
 
-def verify_token(site: dict[str, str], token: str, action: str) -> dict:
+def verify_token(site: dict[str, str], token: str) -> dict:
     if site["verify_type"] == "2captcha":
         resp = requests.post(
             site["verify_url"],
@@ -134,7 +134,17 @@ def run_once(
         }
     print(f"token: {token[:60]}...")
 
-    data = verify_token(site, token, action)
+    try:
+        data = verify_token(site, token)
+    except (requests.RequestException, ValueError) as exc:
+        print(f"verify error: {exc}")
+        return {
+            "action": action,
+            "score": None,
+            "success": False,
+            "error": str(exc),
+        }
+
     print(f"score: {data.get('score')}  success: {data.get('success')}")
     return {
         "action": action,

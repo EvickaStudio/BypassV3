@@ -32,18 +32,20 @@ reCAPTCHA v3 binds the **action** (e.g. `login`, `submit`, `examples/v3scores`) 
 
 This tool does **not** send device fingerprint data (canvas hash, audio fingerprint, mouse trajectories). A real captured fingerprint (`fingerprint.json` via `tools/extract_fingerprint.py`) can improve scores in some environments, but it contains personal device data and gets flagged for reuse after repeated requests.
 
+Recent repeated runs produced 100% accepted tokens, while the scores changed between samples.
+
 ### Current test snapshot
 
-The table below is one 10-run sample from July 5, 2026 using the expected `demo_action`, no captured fingerprint file, and the 2captcha demo verifiers. Treat it as an observation, not a stable benchmark. Scores can change because of IP reputation, rate, Google's current model, site-key policy, and verifier-side changes.
+The table below is one 10-run sample from July 6, 2026 using the expected `demo_action`, no captured fingerprint file, and the 2captcha demo verifiers. Treat it as an observation, not a stable benchmark. Scores can change because of IP reputation, rate, Google's current model, site-key policy, and verifier-side changes.
 
 | Site | Adapter | Runs | Success | Average | Median | Min | Max |
 | ------- | ------- | ---- | ------- | ------- | ------ | --- | --- |
-| 2captcha v3 | base | 10 | 10/10 | 0.60 | 0.70 | 0.10 | 0.90 |
-| 2captcha v3 | synthetic | 10 | 10/10 | 0.52 | 0.70 | 0.10 | 0.90 |
-| 2captcha Enterprise | base | 10 | 10/10 | 0.52 | 0.50 | 0.10 | 0.90 |
-| 2captcha Enterprise | synthetic | 10 | 10/10 | 0.50 | 0.30 | 0.10 | 0.90 |
+| 2captcha v3 | base | 10 | 10/10 | 0.62 | 0.70 | 0.10 | 0.90 |
+| 2captcha v3 | synthetic | 10 | 10/10 | 0.44 | 0.30 | 0.10 | 0.90 |
+| 2captcha Enterprise | base | 10 | 10/10 | 0.60 | 0.70 | 0.10 | 0.90 |
+| 2captcha Enterprise | synthetic | 10 | 10/10 | 0.52 | 0.50 | 0.10 | 0.90 |
 
-The synthetic adapter did not clearly beat the base adapter in this sample. Its purpose is experimental comparison against a fresh synthetic fingerprint body, not a guaranteed score improvement.
+The synthetic adapter underperformed the base adapter in this sample. Its purpose is experimental comparison against a fresh synthetic fingerprint body, not a guaranteed score improvement.
 
 ## Usage
 

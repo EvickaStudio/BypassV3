@@ -2,9 +2,9 @@
 reCAPTCHA v3 bypass with SYNTHETIC fingerprints, grounded in the webworker.js
 deobfuscation (see experiment/DEOBFUSCATION_WRITEUP.md).
 
-WARNING: README.md line 29 documents that synthetic fingerprints LOWER the
-score — Google detects fake motion data. This file exists to make that claim
-testable, not to contradict it. Run test_synth.py to compare against baseline.
+WARNING: README.md documents that synthetic fingerprints LOWER the score —
+Google detects fake motion data. This file exists to make that claim testable,
+not to contradict it. Run test.py to compare against baseline.
 
 Improvements over tools/generate_fingerprint.py + bypass.py, each tied to a
 finding in the writeup:
