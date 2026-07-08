@@ -34,18 +34,18 @@ This tool does **not** send device fingerprint data (canvas hash, audio fingerpr
 
 Recent repeated runs produced 100% accepted tokens, while the scores changed between samples.
 
-### Current test snapshot
+### Current snapshot
 
-The table below is one 10-run sample from July 6, 2026 using the expected `demo_action`, no captured fingerprint file, and the 2captcha demo verifiers. Treat it as an observation, not a stable benchmark. Scores can change because of IP reputation, rate, Google's current model, site-key policy, and verifier-side changes.
+The table below is one 10-run sample from July 8, 2026 using the expected `demo_action`, no captured fingerprint file, and the 2captcha demo verifiers. Treat it as an observation, not a stable benchmark. Scores can change because of IP reputation, rate, Google's current model, site-key policy, and verifier-side changes.
 
 | Site | Adapter | Runs | Success | Average | Median | Min | Max |
 | ------- | ------- | ---- | ------- | ------- | ------ | --- | --- |
-| 2captcha v3 | base | 10 | 10/10 | 0.62 | 0.70 | 0.10 | 0.90 |
+| 2captcha v3 | base | 10 | 10/10 | 0.58 | 0.80 | 0.10 | 0.90 |
 | 2captcha v3 | synthetic | 10 | 10/10 | 0.44 | 0.30 | 0.10 | 0.90 |
-| 2captcha Enterprise | base | 10 | 10/10 | 0.60 | 0.70 | 0.10 | 0.90 |
-| 2captcha Enterprise | synthetic | 10 | 10/10 | 0.52 | 0.50 | 0.10 | 0.90 |
+| 2captcha Enterprise | base | 10 | 10/10 | 0.56 | 0.70 | 0.10 | 0.90 |
+| 2captcha Enterprise | synthetic | 10 | 10/10 | 0.62 | 0.70 | 0.10 | 0.90 |
 
-The synthetic adapter underperformed the base adapter in this sample. Its purpose is experimental comparison against a fresh synthetic fingerprint body, not a guaranteed score improvement.
+The synthetic adapter is only an experimental comparison against a fresh synthetic fingerprint body. This sample is not a stable conclusion: the numbers can move either way, and in this run synthetic looks better on Enterprise while other runs may increase or decrease.
 
 ## Usage
 
@@ -75,6 +75,34 @@ from bypass import ReCaptchaV3Bypass
 anchor = "https://www.google.com/recaptcha/enterprise/anchor?ar=1&k=..."
 token = ReCaptchaV3Bypass(anchor, action="demo_action").bypass()
 ```
+
+### Solving from a site key only (no captured anchor URL)
+
+If you don't have the anchor URL from the browser's network tab, you can solve
+from just the **site key** and the **site origin**. The current reCAPTCHA JS
+release (`v`) is resolved automatically from `api.js` / `enterprise.js`:
+
+```python
+from bypass import ReCaptchaV3Bypass
+
+token = ReCaptchaV3Bypass.from_site_key(
+    "6Lcyqq8oAAAAAJE7eVJ3aZp_hnJcI6LgGdYD8lge",
+    origin="https://2captcha.com",
+    action="demo_action",
+).bypass()
+
+# Enterprise:
+token = ReCaptchaV3Bypass.from_site_key(
+    "6Lel38UnAAAAAMRwKj9qLH2Ws4Tf2uTDQCyfgR6b",
+    origin="https://2captcha.com",
+    action="demo_action",
+    enterprise=True,
+).bypass()
+```
+
+`origin` should be the site's scheme + host (e.g. `https://example.com`). The
+default port is appended automatically to match Google's `co` encoding. To pin a
+specific JS release, pass `v="..."`.
 
 ### Using your own captured fingerprint (optional, higher score)
 

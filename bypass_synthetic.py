@@ -9,13 +9,9 @@ not to contradict it. Run test.py to compare against baseline.
 Improvements over tools/generate_fingerprint.py + bypass.py, each tied to a
 finding in the writeup:
 
-- Field 5: timestamp-derived negative int (JS folds performance.timeOrigin +
-  Date.now() through the "MerVUtRoajKEbP7pLiGXkL28" hash selector). We can't
-  reproduce the hash, but a timestamp-derived seed is more plausible than
-  a random one in the wrong range.
-- Fields 20 + 25: built from the SAME performance.now() sample stream, so they
-  correlate. The JS builds both from the same PerformanceEventTiming ids
-  (5006, 64607, 35837); the existing generator builds them independently.
+- Field 5: positive decimal string (real capture was 1677000260, not negative).
+- Field 20: base64 JSON matching reload_req.bin shape (timing triples + perf + hosts).
+- Field 25: count buckets [[[5006,n],[64607,1],[35837,1]]] — not a fake path trail.
 - Fields 28/29: parsed from the anchor URL (the JS reads anchor-ms /
   execute-ms query params), not hardcoded to 20000/30000.
 - Fields 7, 16, 22: OMITTED. The writeup (section 4) shows 7 is server-issued
@@ -41,77 +37,84 @@ from bypass import (
     reload_url_from_anchor,
 )
 
-# PerformanceEventTiming ids observed in captured field 20/25 payloads.
-# These are stable across versions (they're public event-type ids).
-_EVENT_IDS = (5006, 64607, 35837)
-
 
 def _b64(s: str) -> str:
     return base64.b64encode(s.encode("utf-8")).decode("ascii")
 
 
 def _gen_field_5(rng: random.Random) -> str:
-    # JS: performance.timeOrigin + Date.now() folded through hash selector.
-    # We can't reproduce the hash, but a timestamp-derived negative int is in
-    # the right range and monotonic-ish across calls (real clients are too).
-    base = int(time.time() * 1000) ^ rng.getrandbits(31)
-    return str(-(base % 1_000_000_000 + 1_000_000_000))
+    # Real capture field 5 was positive "1677000260", not negative.
+    base = int(time.time()) ^ rng.getrandbits(20)
+    return str(base | 1_000_000_000)
 
 
-def _gen_perf_stream(rng: random.Random, n: int) -> list[tuple[int, int]]:
-    """Shared performance.now() sample stream used by BOTH field 20 and 25.
-
-    Returns [(event_id, delta_ms), ...]. Field 20 buckets these; field 25
-    lists them. Correlating the two fields is the thing the existing
-    generator misses and the writeup flags as a detection signal.
-    """
-    out = []
-    t = rng.randint(800, 4000)
-    for _ in range(n):
-        t += rng.randint(1500, 90000)
-        out.append((rng.choice(_EVENT_IDS), t))
-    return out
+def _origin_host(url: str) -> str:
+    q = parse_qs(urlparse(url).query)
+    co = q.get("co", [None])[0]
+    if not co:
+        return "2captcha.com"
+    try:
+        pad = "=" * (-len(co) % 4)
+        origin = base64.b64decode(co + pad).decode("utf-8", "replace")
+        return urlparse(origin).hostname or "2captcha.com"
+    except Exception:
+        return "2captcha.com"
 
 
-def _gen_field_20(rng: random.Random, stream: list[tuple[int, int]]) -> str:
-    perf1 = round(rng.uniform(4.0, 7.0), 2)
-    rate1 = round(rng.uniform(0.0008, 0.0015), 18)
-    perf2 = round(rng.uniform(0.04, 0.07), 18)
-    rate2 = round(rng.uniform(0.0005, 0.0009), 22)
-    inner = [[perf1, rate1, 15], [238, perf2, rate2, 1], 0, 0, 0]
-    # Bucket counts derived from the same stream — not independent randoms.
-    counts = {}
-    for eid, _ in stream:
-        counts[eid] = counts.get(eid, 0) + 1
-    buckets = [[eid, counts.get(eid, 1)] for eid in _EVENT_IDS]
+def _gen_field_20(rng: random.Random, host: str) -> str:
+    # Real capture shape (reload_req.bin, base64-decoded after head fix):
+    # [[[3,1297],[1,187,1373],[2,81,1666]],null,
+    #  [null,null,null,[7,3.42...,15],[225,0.11...,6],0,0,0],
+    #  hosts,[1,441]]
+    buckets = [
+        [3, rng.randint(800, 2500)],
+        [1, rng.randint(100, 400), rng.randint(800, 2500)],
+        [2, rng.randint(40, 150), rng.randint(1000, 2500)],
+    ]
+    inner = [
+        rng.choice([6, 7, 8, 15]),
+        round(rng.uniform(3.0, 8.0), 16),
+        rng.uniform(0.0008, 0.0025),
+        15,
+    ]
+    inner2 = [
+        rng.randint(200, 250),
+        round(rng.uniform(0.04, 0.15), 16),
+        rng.uniform(0.0005, 0.002),
+        rng.choice([1, 4, 5, 6]),
+    ]
+    hosts = [
+        host,
+        "static.cloudflareinsights.com",
+        "www.google.com",
+        "www.gstatic.com",
+    ]
+    if rng.random() < 0.5:
+        hosts.insert(2, "cdn.respond.io")
     data = [
         buckets,
         None,
-        [None, None, None, inner],
-        [
-            "2captcha.com",
-            "static.cloudflareinsights.com",
-            "www.google.com",
-            "www.gstatic.com",
-        ],
+        [None, None, None, inner, inner2, 0, 0, 0],
+        hosts,
         [1, rng.randint(400, 500)],
     ]
     return _b64(json.dumps(data, separators=(",", ":")))
 
 
-def _gen_field_25(rng: random.Random, stream: list[tuple[int, int]]) -> str:
-    # Same stream as field 20, but as an ordered event list.
-    events = [[eid, delta] for eid, delta in stream]
-    return _b64(json.dumps([events], separators=(",", ":")))
+def _gen_field_25(rng: random.Random) -> str:
+    # Real capture: [[[5006,119],[64607,1],[35837,1]]] — count buckets only.
+    data = [[[5006, rng.randint(40, 160)], [64607, 1], [35837, 1]]]
+    return _b64(json.dumps(data, separators=(",", ":")))
 
 
-def generate_synthetic_fingerprint(seed: int | None = None) -> dict:
+def generate_synthetic_fingerprint(
+    seed: int | None = None, *, host: str = "2captcha.com"
+) -> dict:
     rng = random.Random(seed)
-    stream = _gen_perf_stream(rng, rng.randint(2, 5))
     return {
         "5": _gen_field_5(rng),
-        "20": _gen_field_20(rng, stream),
-        "25": _gen_field_25(rng, stream),
+        "20": _gen_field_20(rng, host),
+        "25": _gen_field_25(rng),
     }
 
 
@@ -141,10 +144,11 @@ def encode_synthetic_reload_body(
     action: str | None,
     anchor_ms: int,
     execute_ms: int,
+    host: str = "2captcha.com",
     reason: str = "q",
 ) -> bytes:
     """Protobuf reload body with a fresh synthetic fingerprint per call."""
-    fp = generate_synthetic_fingerprint()
+    fp = generate_synthetic_fingerprint(host=host)
     body = bytearray()
     body += _encode_string_field(1, v)
     body += _encode_string_field(2, c)
@@ -170,8 +174,10 @@ class ReCaptchaV3SyntheticBypass(ReCaptchaV3Bypass):
         # Force protobuf mode: we always have a synthetic fingerprint.
         self.action = action
         self._anchor_ms, self._execute_ms = _parse_anchor_ms(target_url)
+        self._host = _origin_host(target_url)
 
     def _do_reload(self, recaptcha_token, k_value, co_value, v_value, hl_value):
+        time.sleep(random.uniform(0.35, 1.4))
         post_url = reload_url_from_anchor(self.target_url, k_value)
         data = encode_synthetic_reload_body(
             v=v_value,
@@ -180,6 +186,7 @@ class ReCaptchaV3SyntheticBypass(ReCaptchaV3Bypass):
             action=self.action,
             anchor_ms=self._anchor_ms,
             execute_ms=self._execute_ms,
+            host=self._host,
         )
         headers = {
             "Content-Type": "application/x-protobuffer",
@@ -202,9 +209,11 @@ if __name__ == "__main__":
     action = sys.argv[2] if len(sys.argv) > 2 else None
     am, em = _parse_anchor_ms(url)
     print(f"parsed anchor-ms={am} execute-ms={em} from URL")
-    fp = generate_synthetic_fingerprint()
+    host = _origin_host(url)
+    fp = generate_synthetic_fingerprint(host=host)
+    print(f"host: {host}")
     print(f"field 5:  {fp['5']}")
     print(f"field 20: {fp['20'][:60]}...")
-    print(f"field 25: {fp['25'][:60]}...")
+    print(f"field 25: {fp['25']}")
     tok = ReCaptchaV3SyntheticBypass(url, action=action).bypass()
     print(f"token: {tok}")
