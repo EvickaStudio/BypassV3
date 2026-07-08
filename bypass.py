@@ -1,9 +1,80 @@
+import base64
 import json
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlencode
 
 import requests
+
+# Default reCAPTCHA JS release is resolved lazily from api.js / enterprise.js
+# when a site key is used without an explicit anchor URL.
+_DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
+)
+
+
+def _encode_origin(origin: str) -> str:
+    """Base64-encode the site origin, appending the default port if missing
+    (Google's anchor loader always sends host:port in `co`)."""
+    parsed = urlparse(origin)
+    if not parsed.hostname:
+        raise ValueError(f"invalid origin: {origin!r}")
+    if parsed.port is None:
+        port = 443 if parsed.scheme == "https" else 80
+        origin = f"{parsed.scheme}://{parsed.hostname}:{port}"
+    return base64.b64encode(origin.encode("utf-8")).decode("ascii")
+
+
+def resolve_script_version(
+    site_key: str, *, enterprise: bool = False, session=None, timeout: int = 30
+) -> str:
+    """Fetch the current reCAPTCHA JS release (`v`) for a site key.
+
+    The version is embedded in `api.js` / `enterprise.js` as
+    `recaptcha/releases/<version>/...`. It changes over time; resolve it fresh."""
+    js_name = "enterprise.js" if enterprise else "api.js"
+    url = f"https://www.google.com/recaptcha/{js_name}?render={site_key}"
+    s = session or requests
+    resp = s.get(url, timeout=timeout, headers={"User-Agent": _DEFAULT_UA})
+    if m := re.search(r"recaptcha/releases/([A-Za-z0-9_-]+)", resp.text):
+        return m[1]
+    else:
+        raise RuntimeError(
+            f"could not resolve reCAPTCHA script version from {url}; "
+            "pass an explicit anchor URL or v= instead"
+        )
+
+
+def anchor_url_for_site_key(
+    site_key: str,
+    origin: str,
+    *,
+    enterprise: bool = False,
+    v: str | None = None,
+    hl: str = "en",
+    size: str = "invisible",
+    session=None,
+    timeout: int = 30,
+) -> str:
+    """Build a reCAPTCHA anchor URL from just a site key + origin.
+
+    Resolves the current JS release (`v`) from api.js/enterprise.js when not
+    given. Everything else the bypass needs (recaptcha-token, k) comes from the
+    anchor response itself."""
+    if v is None:
+        v = resolve_script_version(
+            site_key, enterprise=enterprise, session=session, timeout=timeout
+        )
+    family = "enterprise" if enterprise else "api2"
+    params = {
+        "ar": "1",
+        "k": site_key,
+        "co": _encode_origin(origin),
+        "hl": hl,
+        "v": v,
+        "size": size,
+    }
+    return f"https://www.google.com/recaptcha/{family}/anchor?{urlencode(params)}"
 
 
 # Minimal protobuf writer for /api2/reload.
@@ -98,10 +169,7 @@ class ReCaptchaV3Bypass:
         action: str | None = None,
         fingerprint_path: str | None = None,
         max_retries: int = 3,
-        user_agent: str = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) "
-            "Gecko/20100101 Firefox/152.0"
-        ),
+        user_agent: str = _DEFAULT_UA,
     ) -> None:
         self.target_url = target_url
         self.action = action
@@ -109,6 +177,47 @@ class ReCaptchaV3Bypass:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
         self.fingerprint = self._load_fingerprint(fingerprint_path)
+
+    @classmethod
+    def from_site_key(
+        cls,
+        site_key: str,
+        origin: str,
+        *,
+        action: str | None = None,
+        enterprise: bool = False,
+        v: str | None = None,
+        hl: str = "en",
+        size: str = "invisible",
+        fingerprint_path: str | None = None,
+        max_retries: int = 3,
+        user_agent: str = _DEFAULT_UA,
+    ) -> "ReCaptchaV3Bypass":
+        """Construct a bypass from just a site key + origin.
+
+        Builds the anchor URL by resolving the current JS release from
+        api.js/enterprise.js. Use this when you don't have a captured anchor URL
+        from the browser's network tab."""
+        session = requests.Session()
+        session.headers.update({"User-Agent": user_agent})
+        anchor = anchor_url_for_site_key(
+            site_key,
+            origin,
+            enterprise=enterprise,
+            v=v,
+            hl=hl,
+            size=size,
+            session=session,
+        )
+        instance = cls(
+            anchor,
+            action=action,
+            fingerprint_path=fingerprint_path,
+            max_retries=max_retries,
+            user_agent=user_agent,
+        )
+        instance.session = session
+        return instance
 
     @staticmethod
     def _load_fingerprint(path: str | None) -> dict | None:
