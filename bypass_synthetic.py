@@ -55,7 +55,7 @@ def _origin_host(url: str) -> str:
         return "2captcha.com"
     try:
         pad = "=" * (-len(co) % 4)
-        origin = base64.b64decode(co + pad).decode("utf-8", "replace")
+        origin = base64.urlsafe_b64decode(co + pad).decode("utf-8", "replace")
         return urlparse(origin).hostname or "2captcha.com"
     except Exception:
         return "2captcha.com"

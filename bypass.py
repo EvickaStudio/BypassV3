@@ -14,15 +14,17 @@ _DEFAULT_UA = (
 
 
 def _encode_origin(origin: str) -> str:
-    """Base64-encode the site origin, appending the default port if missing
-    (Google's anchor loader always sends host:port in `co`)."""
+    """Base64-encode scheme://host:port (Google's `co` form)."""
     parsed = urlparse(origin)
-    if not parsed.hostname:
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError(f"invalid origin: {origin!r}")
-    if parsed.port is None:
-        port = 443 if parsed.scheme == "https" else 80
-        origin = f"{parsed.scheme}://{parsed.hostname}:{port}"
-    return base64.b64encode(origin.encode("utf-8")).decode("ascii")
+    port = (
+        parsed.port
+        if parsed.port is not None
+        else (443 if parsed.scheme == "https" else 80)
+    )
+    normalized = f"{parsed.scheme}://{parsed.hostname}:{port}"
+    return base64.b64encode(normalized.encode("utf-8")).decode("ascii")
 
 
 def resolve_script_version(
@@ -35,14 +37,19 @@ def resolve_script_version(
     js_name = "enterprise.js" if enterprise else "api.js"
     url = f"https://www.google.com/recaptcha/{js_name}?render={site_key}"
     s = session or requests
-    resp = s.get(url, timeout=timeout, headers={"User-Agent": _DEFAULT_UA})
+    ua = (
+        session.headers.get("User-Agent", _DEFAULT_UA)
+        if session is not None
+        else _DEFAULT_UA
+    )
+    resp = s.get(url, timeout=timeout, headers={"User-Agent": ua})
+    resp.raise_for_status()
     if m := re.search(r"recaptcha/releases/([A-Za-z0-9_-]+)", resp.text):
         return m[1]
-    else:
-        raise RuntimeError(
-            f"could not resolve reCAPTCHA script version from {url}; "
-            "pass an explicit anchor URL or v= instead"
-        )
+    raise RuntimeError(
+        f"could not resolve reCAPTCHA script version from {url}; "
+        "pass an explicit anchor URL or v= instead"
+    )
 
 
 def anchor_url_for_site_key(
