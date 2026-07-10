@@ -1,7 +1,7 @@
 [project]
 name = "bypassv3"
 version = "0.1.0"
-description = "Add your description here"
+description = "Browserless integration-testing and protocol-research toolkit for authorized reCAPTCHA v3 and reCAPTCHA Enterprise environments."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
