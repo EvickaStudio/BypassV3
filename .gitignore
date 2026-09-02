@@ -182,3 +182,6 @@ tests/har/*
 !tests/har/.gitkeep
 tests/fixtures/*
 !tests/fixtures/.gitkeep
+
+# Test run results
+results/
