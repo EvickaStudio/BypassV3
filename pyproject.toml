@@ -3,6 +3,7 @@ name = "bypassv3"
 version = "0.1.0"
 description = "Browserless integration-testing and protocol-research toolkit for authorized reCAPTCHA v3 and reCAPTCHA Enterprise environments."
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 dependencies = [
     "blackboxprotobuf>=1.0.1",
