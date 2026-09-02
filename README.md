@@ -1,5 +1,7 @@
 # BypassV3 - reCAPTCHA v3 Integration Test Toolkit
 
+![BypassV3](assets/card.png)
+
 A browserless testing and research client for **reCAPTCHA v3** and
 **score-based reCAPTCHA Enterprise** integrations.
 
