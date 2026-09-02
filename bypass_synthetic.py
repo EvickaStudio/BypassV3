@@ -22,6 +22,7 @@ finding in the writeup:
 """
 
 import base64
+import binascii
 import json
 import random
 import time
@@ -57,7 +58,7 @@ def _origin_host(url: str) -> str:
         pad = "=" * (-len(co) % 4)
         origin = base64.urlsafe_b64decode(co + pad).decode("utf-8", "replace")
         return urlparse(origin).hostname or "2captcha.com"
-    except Exception:
+    except (binascii.Error, UnicodeDecodeError):
         return "2captcha.com"
 
 
@@ -192,7 +193,12 @@ class ReCaptchaV3SyntheticBypass(ReCaptchaV3Bypass):
             "Content-Type": "application/x-protobuffer",
             "Accept": "*/*",
             "Origin": "https://www.google.com",
-            "Referer": "https://www.google.com/",
+            "Referer": self.target_url,
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "DNT": "1",
         }
         try:
             resp = self.session.post(post_url, timeout=30, data=data, headers=headers)

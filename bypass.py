@@ -1,8 +1,9 @@
 import base64
+import binascii
 import json
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 
@@ -255,9 +256,37 @@ class ReCaptchaV3Bypass:
             one("hl", "en"),
         )
 
-    def get_response(self) -> requests.Response | None:
+    @staticmethod
+    def _origin_referer(anchor_url: str) -> str | None:
+        """Derive the parent-page URL from the anchor's `co` param (b64 origin)."""
+        q = parse_qs(urlparse(anchor_url).query)
+        co = q.get("co", [None])[0]
+        if not co:
+            return None
         try:
-            return self.session.get(self.target_url, timeout=30)
+            pad = "=" * (-len(co) % 4)
+            origin = base64.urlsafe_b64decode(co + pad).decode("utf-8")
+            return f"{origin}/"
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return None
+
+    def get_response(self) -> requests.Response | None:
+        headers = {
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "iframe",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "cross-site",
+            "Sec-Fetch-Storage-Access": "none",
+            "DNT": "1",
+        }
+        if referer := self._origin_referer(self.target_url):
+            headers["Referer"] = referer
+        try:
+            return self.session.get(self.target_url, timeout=30, headers=headers)
         except requests.exceptions.RequestException as e:
             print(f"Failed to send GET request: {e}")
             return None
@@ -266,6 +295,14 @@ class ReCaptchaV3Bypass:
         self, recaptcha_token, k_value, co_value, v_value, hl_value
     ) -> str | None:
         post_url = reload_url_from_anchor(self.target_url, k_value)
+
+        common_headers = {
+            "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "DNT": "1",
+        }
 
         # Protobuf embeds action in the token; form mode is only the no-action fallback.
         if self.action or self.fingerprint:
@@ -281,7 +318,8 @@ class ReCaptchaV3Bypass:
                     "Content-Type": "application/x-protobuffer",
                     "Accept": "*/*",
                     "Origin": "https://www.google.com",
-                    "Referer": "https://www.google.com/",
+                    "Referer": self.target_url,
+                    **common_headers,
                 },
             }
         else:

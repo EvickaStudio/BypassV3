@@ -1,5 +1,7 @@
 # BypassV3 - reCAPTCHA v3 Integration Test Toolkit
 
+![BypassV3](assets/card.png)
+
 A browserless testing and research client for **reCAPTCHA v3** and
 **score-based reCAPTCHA Enterprise** integrations.
 
@@ -302,5 +304,5 @@ own risk.
 
 ## License
 
-This project is licensed under the AGPLv3 License - see the [LICENSE](LICENSE)
-file for details.
+This project is licensed under the Apache License 2.0 - see the
+[LICENSE](LICENSE) file for details.

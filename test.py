@@ -3,10 +3,19 @@ Live smoke test against reCAPTCHA v3 demo sites.
 
 Run:
     uv run python test.py
+    RUNS=100 uv run python test.py          # longer sample
+    RUNS=100 SAVE=results.csv uv run python test.py
+
+Raw per-run data is always appended to test_results.jsonl so long samples
+can be re-analyzed without re-running.
 """
 
-from collections import Counter
+import csv
+import json
+import os
 import random
+from collections import Counter
+from datetime import UTC, datetime
 from statistics import mean, median, stdev
 from urllib.parse import parse_qs, urlparse
 
@@ -14,7 +23,6 @@ import requests
 
 from bypass import ReCaptchaV3Bypass as ReCaptchaV3BypassBase
 from bypass_synthetic import ReCaptchaV3SyntheticBypass
-
 
 # --- 2captcha demo ---
 ANCHOR_2CAPTCHA = (
@@ -44,7 +52,11 @@ ADAPTERS = (
     ("base", ReCaptchaV3BypassBase),
     ("synthetic", ReCaptchaV3SyntheticBypass),
 )
-RUNS = 10
+RUNS = int(os.environ.get("RUNS", "10"))
+RESULTS_DIR = "results"
+RUN_ID = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+JSONL_PATH = os.path.join(RESULTS_DIR, f"{RUN_ID}_results.jsonl")
+CSV_PATH = os.path.join(RESULTS_DIR, f"{RUN_ID}_runs.csv")
 RANDOMIZE_ACTIONS = False
 RANDOM_ACTIONS = (
     "login",
@@ -227,7 +239,75 @@ def summarize_results(results: dict[tuple[str, str], list[dict]]) -> None:
         )
 
 
+def compare_adapters(results: dict[tuple[str, str], list[dict]]) -> None:
+    """Paired base-vs-synthetic comparison per site (same IP, same session)."""
+    for site_name in sorted({key[0] for key in results}):
+        base = [
+            float(r["score"])
+            for r in results.get((site_name, "base"), [])
+            if r["score"] is not None
+        ]
+        syn = [
+            float(r["score"])
+            for r in results.get((site_name, "synthetic"), [])
+            if r["score"] is not None
+        ]
+        if not base or not syn:
+            continue
+        n = min(len(base), len(syn))
+        diffs = [b - s for b, s in zip(base[:n], syn[:n])]
+        delta = mean(diffs)
+        se = stdev(diffs) / (n**0.5) if n > 1 and stdev(diffs) > 0 else 0.0
+        t = delta / se if se else float("inf") if delta else 0.0
+        verdict = (
+            "base higher (significant)"
+            if abs(t) > 2 and delta > 0
+            else "synthetic higher (significant)"
+            if abs(t) > 2
+            else "no significant difference"
+        )
+        print(
+            f"\n{site_name}: n={n}  base-synthetic delta={delta:+.3f} "
+            f"(t≈{t:+.2f})  -> {verdict}"
+        )
+
+
+def save_results(results: dict[tuple[str, str], list[dict]]) -> None:
+    """Write raw per-run data to results/<run_id>_results.jsonl and _runs.csv."""
+    record = {
+        "run_id": RUN_ID,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "runs_per_cell": RUNS,
+        "cells": {
+            f"{site}|{adapter}": runs for (site, adapter), runs in results.items()
+        },
+    }
+    with open(JSONL_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+    with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            ["site", "adapter", "run", "action", "score", "success", "error"]
+        )
+        for (site_name, adapter_name), runs in results.items():
+            for i, run in enumerate(runs, start=1):
+                writer.writerow(
+                    [
+                        site_name,
+                        adapter_name,
+                        i,
+                        run["action"],
+                        run["score"],
+                        run["success"],
+                        run["error"],
+                    ]
+                )
+    print(f"per-run data saved to {JSONL_PATH} and {CSV_PATH}")
+
+
 def main() -> None:
+    os.makedirs(RESULTS_DIR, exist_ok=True)
     results = {}
     for site in SITES:
         if RANDOMIZE_ACTIONS:
@@ -260,6 +340,8 @@ def main() -> None:
                     )
                 print()
     summarize_results(results)
+    compare_adapters(results)
+    save_results(results)
     print("\nDone.")
 
 
