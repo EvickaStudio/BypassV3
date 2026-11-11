@@ -90,16 +90,20 @@ when you want to compare request shapes in a controlled environment.
 
 ### Current snapshot
 
-The table below is one 10-run sample from July 8, 2026 using the expected
-`demo_action`, no captured fingerprint file, and the public 2captcha demo
-verifiers. Treat it as an observation, not a stable benchmark.
+Sample from November 11, 2026: 10 runs per adapter and site.
+Scores are a snapshot, not a stable benchmark.
 
 | Site | Adapter | Runs | Success | Average | Median | Min | Max |
 | ------- | ------- | ---- | ------- | ------- | ------ | --- | --- |
-| 2captcha v3 | base | 10 | 10/10 | 0.58 | 0.80 | 0.10 | 0.90 |
-| 2captcha v3 | synthetic | 10 | 10/10 | 0.44 | 0.30 | 0.10 | 0.90 |
-| 2captcha Enterprise | base | 10 | 10/10 | 0.56 | 0.70 | 0.10 | 0.90 |
-| 2captcha Enterprise | synthetic | 10 | 10/10 | 0.62 | 0.70 | 0.10 | 0.90 |
+| Appspot | base | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| Appspot | synthetic | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| NextCaptcha | base | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| NextCaptcha | synthetic | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| Own Enterprise | base | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| Own Enterprise | synthetic | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+
+As of November 11, 2026, both 2captcha demos behave like mock backends, accepting
+fabricated tokens. They are disabled in `test.py` and excluded from comparisons.
 
 The synthetic adapter is an experimental comparison against a fresh synthetic
 fingerprint body. Results can move in either direction across runs.
@@ -280,8 +284,9 @@ The `tools/` folder contains utilities for analysis and fingerprint extraction:
 uv run python test.py
 ```
 
-Runs live tests against the public 2captcha v3 and 2captcha Enterprise demo
-verifiers. The test runs each site 10 times with both adapters:
+Runs live tests against the public Appspot and NextCaptcha demo verifiers.
+The 2captcha v3 and Enterprise demos remain disabled for the reason above.
+The test runs each enabled site 10 times by default with both adapters:
 
 * `base`: minimal protobuf body, no synthetic fingerprint fields.
 * `synthetic`: fresh synthetic fingerprint fields per reload.
