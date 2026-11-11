@@ -1,6 +1,6 @@
 # BypassV3 - reCAPTCHA v3 Integration Test Toolkit
 
-![BypassV3](assets/card.png)
+![BypassV3](assets/readme-banner.webp)
 
 Browserless Python client for testing **reCAPTCHA v3** and **score-based reCAPTCHA Enterprise** integrations. Generate tokens for integration and end-to-end tests without launching a full browser, or evaluate how your server-side verification handles minimally constructed token requests.
 
