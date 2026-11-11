@@ -2,277 +2,107 @@
 
 ![BypassV3](assets/card.png)
 
-A browserless testing and research client for **reCAPTCHA v3** and
-**score-based reCAPTCHA Enterprise** integrations.
+Browserless Python client for testing **reCAPTCHA v3** and **score-based reCAPTCHA Enterprise** integrations. Generate tokens for integration and end-to-end tests without launching a full browser, or evaluate how your server-side verification handles minimally constructed token requests.
 
-The primary use case is controlled testing of an application that you own,
-operate, or are explicitly authorized to test. It can help run integration and
-end-to-end tests for endpoints protected by reCAPTCHA without requiring a full
-browser for every test case.
-
-It can also be used defensively to evaluate whether an application's
-server-side verification and surrounding anti-abuse controls remain effective
-when presented with a minimally constructed token request.
+Supports invisible, score-based flows only—it does **not** solve image, audio, checkbox, or other interactive CAPTCHA challenges.
 
 > [!IMPORTANT]
-> Use this project only with your own systems, local test environments, or
-> public demo environments that are explicitly intended for testing. This
-> repository does not grant permission to test third-party websites.
+> Use this toolkit only on applications you own, operate, or are explicitly authorized to test, or against public demo environments intended for testing. Using this repository does not grant permission to test third-party sites. See [SECURITY.md](SECURITY.md) for full scope and reporting guidelines.
 
-This project supports invisible, score-based reCAPTCHA flows. It does **not**
-solve image challenges, audio challenges, visible checkbox challenges, or other
-interactive CAPTCHA flows.
+## Quick Start
 
-See [SECURITY.md](SECURITY.md) for reporting guidance and scope boundaries.
+Requires **Python 3.12+**. The only direct runtime dependency is `requests`.
 
-![reCAPTCHA status](assets/image.png)
+```bash
+uv sync
+```
 
-## Scope
+### Solve from a site key and origin
 
-This toolkit is intended for:
+When testing your own app, pass the **site key** and **origin** (`scheme://host`). BypassV3 resolves the current JS release (`v`) from `api.js` / `enterprise.js` and encodes `origin` into Google's `.`-padded base64 `co` parameter automatically:
 
-* testing reCAPTCHA v3 or reCAPTCHA Enterprise integrations that you own,
-    operate, or are explicitly authorized to test;
-* controlled integration, end-to-end, and regression testing;
-* research using local fixtures or public demo environments intended for
-    testing;
-* defensive evaluation of server-side verification and anti-abuse controls.
+```python
+from bypass import ReCaptchaV3Bypass
 
-It is not intended for testing unrelated third-party websites, circumventing
-access controls, creating abusive traffic, automating account creation, spam,
-fraud, scraping against a site's rules, or any other unauthorized activity.
+# Standard reCAPTCHA v3
+token = ReCaptchaV3Bypass.from_site_key(
+    "YOUR_SITE_KEY",
+    origin="https://app.example.test",
+    action="login",
+).bypass()
+
+# reCAPTCHA Enterprise
+token = ReCaptchaV3Bypass.from_site_key(
+    "YOUR_ENTERPRISE_SITE_KEY",
+    origin="https://app.example.test",
+    action="login",
+    enterprise=True,
+).bypass()
+```
+
+### Solve from a captured anchor URL
+
+You can also pass an `/api2/anchor` or `/enterprise/anchor` URL copied from browser DevTools (the reload endpoint is selected automatically from the URL):
+
+```python
+from bypass import ReCaptchaV3Bypass
+
+anchor = "https://www.google.com/recaptcha/api2/anchor?ar=1&k=..."
+
+# Recommended: embed the expected action via protobuf reload
+token = ReCaptchaV3Bypass(anchor, action="login").bypass()
+
+# Optional: omit action (falls back to form-encoded reload)
+token = ReCaptchaV3Bypass(anchor).bypass()
+
+# Optional: replay captured fingerprint fields for local comparison
+token = ReCaptchaV3Bypass(anchor, action="login", fingerprint_path="fingerprint.json").bypass()
+```
+
+### Synthetic fingerprints (`bypass_synthetic.py`)
+
+`ReCaptchaV3SyntheticBypass` generates fresh synthetic fingerprint fields for each
+reload without a captured fingerprint file. It is experimental and does not
+guarantee a higher score.
+
+```python
+from bypass_synthetic import ReCaptchaV3SyntheticBypass
+
+token = ReCaptchaV3SyntheticBypass.from_site_key(
+    "YOUR_SITE_KEY",
+    origin="https://app.example.test",
+    action="login",
+).bypass()
+```
+
+Add `enterprise=True` for Enterprise, or use
+`ReCaptchaV3SyntheticBypass(anchor, action="login").bypass()` with a captured anchor URL.
 
 ## How It Works
 
-reCAPTCHA v3's `/api2/reload` endpoint accepts a **protobuf** body (`Content-Type:
-application/x-protobuffer`). reCAPTCHA Enterprise uses the same idea through
-`/enterprise/reload`. This client sends a **minimal protobuf body** containing
-the required fields plus the action. No browser automation is required for the
-token request itself.
+reCAPTCHA v3 (`/api2/reload`) and Enterprise (`/enterprise/reload`) accept a binary **protobuf** request (`Content-Type: application/x-protobuffer`). No browser execution is needed for the token exchange itself:
 
-### Request flow
+1. **Fetch anchor (`GET .../anchor`)** — Extracts the `recaptcha-token` (`c`), site key (`k`), encoded origin (`co`), script version (`v`), and language (`hl`). Note that Google expects `.` instead of `=` for base64 padding in `co`; literal `=`/`%3D` causes the anchor endpoint to return an unsupported-browser page without a token.
+2. **Request token (`POST .../reload?k=...`)** — Sends a minimal protobuf payload containing `v` (1), `c` (2), `reason` (6), `action` (8), and `k` (14). Google returns `["rresp","<token>",null,<ttl>,...]` prefixed with the XSSI guard `)]}'`.
+3. **Verify** — Submit `<token>` to your application's backend verifier. Because `action` is bound into the token at generation time, pass the `action=` your verifier expects (if omitted, the client falls back to form-encoded mode with no action bound).
 
-1. `GET /api2/anchor?...` or `GET /enterprise/anchor?...` to fetch the anchor
-     page and extract the `recaptcha-token` (`c` value), site key (`k`), origin
-     (`co`), script version (`v`), and language (`hl`) from the URL or response.
-2. `POST /api2/reload?k=...` or `POST /enterprise/reload?k=...` to send a
-     minimal protobuf body with fields `v` (1), `c` (2), `reason` (6), `action`
-     (8), and `k` (14). Google responds with JSON: `["rresp","<token>",null,<ttl>,...]`
-     prefixed with an XSSI guard `)]}'`.
-3. The token is returned and can be submitted to your own application's verify
-     endpoint.
+## Scores & Snapshot
 
-### Action handling
+Scores vary per request and depend primarily on factors outside the client: IP reputation, request rate, site-key configuration, action matching, and Google's risk model. By default, BypassV3 sends no browser automation stack or device fingerprint.
 
-reCAPTCHA v3 binds the **action** into the token at generation time. The value
-must match the integration under test, or server-side verification can reject
-the token with an action mismatch. This client uses protobuf mode whenever an
-`action=` value is provided. If no action is provided, it falls back to
-form-encoded mode.
-
-Reference: 2captcha documents the same demo flow in [How to solve reCAPTCHA
-v3](https://2captcha.com/demo/recaptcha-v3). Their public demo page uses an
-`action` value that is consumed after token generation in the callback chain.
-
-## Score
-
-The score varies per request and is dominated by factors outside this tool's
-control:
-
-* IP reputation and request volume;
-* site key and verifier policy;
-* action binding and server-side acceptance rules;
-* Google-side changes to the risk model and endpoint behavior.
-
-This client does not send a browser automation stack or a captured personal
-device fingerprint by default. Local research data can be supplied explicitly
-when you want to compare request shapes in a controlled environment.
-
-### Current snapshot
-
-The table below is one 10-run sample from July 8, 2026 using the expected
-`demo_action`, no captured fingerprint file, and the public 2captcha demo
-verifiers. Treat it as an observation, not a stable benchmark.
+Sample from **November 11, 2026** (10 runs per site and adapter; snapshot only, not a fixed benchmark):
 
 | Site | Adapter | Runs | Success | Average | Median | Min | Max |
-| ------- | ------- | ---- | ------- | ------- | ------ | --- | --- |
-| 2captcha v3 | base | 10 | 10/10 | 0.58 | 0.80 | 0.10 | 0.90 |
-| 2captcha v3 | synthetic | 10 | 10/10 | 0.44 | 0.30 | 0.10 | 0.90 |
-| 2captcha Enterprise | base | 10 | 10/10 | 0.56 | 0.70 | 0.10 | 0.90 |
-| 2captcha Enterprise | synthetic | 10 | 10/10 | 0.62 | 0.70 | 0.10 | 0.90 |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Appspot | `base` | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| Appspot | `synthetic` | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| NextCaptcha | `base` | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| NextCaptcha | `synthetic` | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| Own Enterprise | `base` | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
+| Own Enterprise | `synthetic` | 10 | 10/10 | 0.90 | 0.90 | 0.90 | 0.90 |
 
-The synthetic adapter is an experimental comparison against a fresh synthetic
-fingerprint body. Results can move in either direction across runs.
-
-## Usage
-
-```python
-from bypass import ReCaptchaV3Bypass
-
-# The anchor URL from the browser's network tab
-url = "https://www.google.com/recaptcha/api2/anchor?ar=1&k=..."
-
-# Pass the action the site expects (recommended: embeds it in the token)
-gtk = ReCaptchaV3Bypass(url, action="login").bypass()
-
-# Without action (form-encoded fallback, no action in token)
-gtk = ReCaptchaV3Bypass(url).bypass()
-
-# With a captured fingerprint for a higher score (optional)
-gtk = ReCaptchaV3Bypass(url, action="login", fingerprint_path="fingerprint.json").bypass()
-```
-
-### Enterprise usage
-
-Enterprise anchors are supported by the same class. The reload endpoint is
-selected from the anchor URL.
-
-```python
-from bypass import ReCaptchaV3Bypass
-
-anchor = "https://www.google.com/recaptcha/enterprise/anchor?ar=1&k=..."
-token = ReCaptchaV3Bypass(anchor, action="demo_action").bypass()
-```
-
-### Solving from a site key only
-
-If you do not have the anchor URL from your own application, you can solve from
-just the **site key** and the **site origin**. The current reCAPTCHA JS release
-(`v`) is resolved automatically from `api.js` / `enterprise.js`.
-
-```python
-from bypass import ReCaptchaV3Bypass
-
-token = ReCaptchaV3Bypass.from_site_key(
-        "YOUR_SITE_KEY",
-        origin="https://app.example.test",
-        action="demo_action",
-).bypass()
-
-token = ReCaptchaV3Bypass.from_site_key(
-        "YOUR_ENTERPRISE_SITE_KEY",
-        origin="https://app.example.test",
-        action="demo_action",
-        enterprise=True,
-).bypass()
-```
-
-`origin` should be the site's scheme + host, for example `https://example.com`.
-The default port is appended automatically to match Google's `co` encoding. To
-pin a specific JS release, pass `v="..."`.
-
-### Using your own captured fingerprint
-
-By default the client sends a minimal protobuf body with no device data. For a
-controlled local comparison you can capture a browser request from your own test
-environment and pass it explicitly via `fingerprint_path=`.
-
-#### Step 1: Capture the reload request body
-
-1. Open your own application or local test environment in Firefox or Chrome.
-2. Open DevTools and switch to the Network tab.
-3. Trigger the reCAPTCHA flow.
-4. Find the request to `POST https://www.google.com/recaptcha/api2/reload?k=...`
-     or the Enterprise equivalent.
-5. Inspect the payload and export the request body in a form you can reuse.
-
-The payload is binary protobuf. You need the raw bytes. Two options:
-
-* **Option A (HAR file):** save the request as a HAR with content and extract
-    the body from the archive.
-* **Option B (raw body):** export the payload as base64, then decode it locally:
-
-    ```bash
-    python -c "import base64,sys; open('reload_req.bin','wb').write(base64.b64decode(open(sys.argv[1]).read().strip()))" copied_b64.txt
-    ```
-
-#### Step 2: Extract the fingerprint fields
-
-If you have a HAR file, first extract the bodies:
-
-```bash
-uv run python tools/extract_har.py
-```
-
-This reads all `*.har` files in `tests/har/` and writes the request and response
-bodies into `tests/fixtures/`. Find the file named `reload_req.bin`.
-
-If you already have the raw binary body (`reload_req.bin`), skip to the next
-command.
-
-Now extract the reusable fingerprint fields:
-
-```bash
-uv run python tools/extract_fingerprint.py tests/fixtures/reload_req.bin fingerprint.json
-```
-
-You should see output like:
-
-```text
-wrote fingerprint.json
-    field 5: 11 chars  -1361142321...
-    field 7: 921 chars  05AD5oO34C1cjMER3YFQddJykyBIKt-4Njq3B3TMNefi...
-    field 16: 5055 chars  0l6uzr5uQRXx4ZFkORUEtItcOCvbroIuAf3VuXpWRf...
-    field 20: 325 chars  tbMyw5OCwxNDA3XSxbMSwyMjYsMTUxMl0sWzIsMjcs...
-    field 22: 3748 chars  BDAAYAIAGEUgAUoIIwkBCKAMAIlYgAyAABtAgwIAEE...
-    field 25: 44 chars  W1tbNTAwNiw0NF0sWzY0NjA3LDFdLFszNTgzNywxXV1d...
-    field 28: 20000
-    field 29: 30000
-```
-
-#### Step 3: Use it
-
-Pass the `fingerprint_path=` argument to include the captured fields in the
-reload request:
-
-```python
-from bypass import ReCaptchaV3Bypass
-
-gtk = ReCaptchaV3Bypass(anchor_url, action="login", fingerprint_path="fingerprint.json").bypass()
-```
-
-Without `fingerprint_path=`, the client uses the default minimal request.
-
-#### Verifying what's in your fingerprint
-
-You can decode and inspect any captured body with:
-
-```bash
-uv run python tools/proto_decode.py tests/fixtures/reload_req.bin
-uv run python tools/decode_body.py tests/fixtures/reload_req.bin
-```
-
-#### What each field is
-
-| Field | Wire | Contents | Source |
-| ------- | ------ | ---------- | -------- |
-| 5 | string | Negative integer (hash/seed) | `webworker.js` |
-| 7 | string | Opaque token (`05AD5oO3...`) | Server-provided in a prior reload response |
-| 16 | string | Large opaque blob (canvas/audio fingerprint) | `webworker.js` |
-| 20 | string | Base64 of JSON: perf timing + host list | `webworker.js` |
-| 22 | string | Base64 of binary: JS environment probes | `webworker.js` |
-| 25 | string | Base64 of JSON: mouse/touch event array | `webworker.js` |
-| 28 | int | `anchor-ms` from anchor URL | URL parameter |
-| 29 | int | `execute-ms` from anchor URL | URL parameter |
-
-Fields 7, 16, and 22 are opaque device-bound blobs. They are local research
-artifacts, not a portable score-optimization mechanism.
-
-## Requirements
-
-* Python 3.12+
-* `requests`
-* `blackboxprotobuf`
-
-## Tools
-
-The `tools/` folder contains utilities for analysis and fingerprint extraction:
-
-* `proto_decode.py`: decode protobuf wire-format without a schema
-* `decode_body.py`: decode captured request and response bodies
-* `extract_har.py`: extract bodies from HAR files
-* `extract_fingerprint.py`: extract reusable fields from a captured reload request
-* `generate_fingerprint.py`: synthetic fingerprint generator (experimental)
+* `base` sends the minimal 5-field protobuf body; `synthetic` adds experimental synthetic fingerprint fields for comparison.
+* **Why 2captcha demos are disabled:** As of November 11, 2026, both the 2captcha v3 and Enterprise demo endpoints act like mock backends (accepting fabricated tokens and invalid site keys), so they are disabled in `test.py` and excluded here.
 
 ## Testing
 
@@ -280,29 +110,53 @@ The `tools/` folder contains utilities for analysis and fingerprint extraction:
 uv run python test.py
 ```
 
-Runs live tests against the public 2captcha v3 and 2captcha Enterprise demo
-verifiers. The test runs each site 10 times with both adapters:
+Runs 10 iterations per adapter (`base` and `synthetic`) against the live **Appspot** and **NextCaptcha** demo verifiers, prints summary statistics, and writes per-run logs to `results/` (`.jsonl` and `.csv`).
 
-* `base`: minimal protobuf body, no synthetic fingerprint fields.
-* `synthetic`: fresh synthetic fingerprint fields per reload.
+To test different actions, set `RANDOMIZE_ACTIONS = True` in `test.py`.
 
-At the end it prints a comparison table with success counts, score averages,
-min/max, standard deviation, and score distribution.
+## Captured Fingerprints & Protocol Tools
 
-Set `RANDOMIZE_ACTIONS = True` in `test.py` only when you explicitly want to
-test action robustness. The default uses the expected action for each demo.
+For controlled local research, you can replay fields from a real `reload` request captured in your own test environment:
 
-## Disclaimer
+1. **Capture the `POST .../reload` body** in DevTools Network tab into `tests/fixtures/reload_req.bin`:
+   * **From a HAR file:** save a HAR with content into `tests/har/`, then run `uv run python tools/extract_har.py`.
+   * **From a base64 payload:** save the copied base64 string to `copied_b64.txt` and decode it:
+     ```bash
+     python -c "import base64,sys; open('tests/fixtures/reload_req.bin','wb').write(base64.b64decode(open(sys.argv[1]).read().strip()))" copied_b64.txt
+     ```
+2. **Extract reusable fields:**
+   ```bash
+   uv run python tools/extract_fingerprint.py tests/fixtures/reload_req.bin fingerprint.json
+   ```
+3. **Pass `fingerprint_path="fingerprint.json"`** to `ReCaptchaV3Bypass` or `ReCaptchaV3Bypass.from_site_key(...)`.
 
-This program is intended for educational and testing purposes only.
-Any misuse or illegal activity using this code is strictly prohibited.
-The authors assume no liability for any damage or legal consequences caused by
-its use.
+### Reload protobuf fields
 
-This software is provided "as is", without warranty of any kind. Use at your
-own risk.
+| Field | Type | Contents | Source |
+| :---: | :--- | :--- | :--- |
+| `5` | string | Integer hash/seed | `webworker.js` |
+| `7` | string | Prior reload token (`05AD5oO3...`) | Previous reload response |
+| `16` | string | Opaque canvas/audio blob | `webworker.js` |
+| `20` | string | Base64 JSON (perf timing + host list) | `webworker.js` |
+| `22` | string | Base64 binary (JS environment probes) | `webworker.js` |
+| `25` | string | Base64 JSON (mouse/touch events) | `webworker.js` |
+| `28` | int | `anchor-ms` parameter | Anchor URL |
+| `29` | int | `execute-ms` parameter | Anchor URL |
 
-## License
+*(Fields `7`, `16`, and `22` are opaque device-bound research artifacts, not portable score boosters.)*
 
-This project is licensed under the Apache License 2.0 - see the
-[LICENSE](LICENSE) file for details.
+### Utilities in `tools/`
+
+Only `decode_body.py` needs the optional dependency: install it with `uv sync --extra tools`.
+
+* `proto_decode.py` — Schema-less protobuf wire-format decoder
+* `decode_body.py` — Decode captured reload request/response bodies
+* `extract_har.py` — Extract raw bodies from `tests/har/*.har`
+* `extract_fingerprint.py` — Export fields `5, 7, 16, 20, 22, 25, 28, 29` to JSON
+* `generate_fingerprint.py` — Experimental synthetic fingerprint generator
+
+## Disclaimer & License
+
+Provided "as is" for authorized testing and educational research only, without warranty of any kind. Misuse or unauthorized testing is strictly prohibited, and the authors assume no liability for its use.
+
+Licensed under the Apache License 2.0 — see [LICENSE](LICENSE).

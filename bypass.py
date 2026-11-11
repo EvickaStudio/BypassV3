@@ -25,7 +25,11 @@ def _encode_origin(origin: str) -> str:
         else (443 if parsed.scheme == "https" else 80)
     )
     normalized = f"{parsed.scheme}://{parsed.hostname}:{port}"
-    return base64.b64encode(normalized.encode("utf-8")).decode("ascii")
+    # Google pads `co` with "." instead of "="; a literal %3D makes the anchor
+    # page render a browser-unsupported error with no recaptcha-token.
+    return (
+        base64.b64encode(normalized.encode("utf-8")).decode("ascii").replace("=", ".")
+    )
 
 
 def resolve_script_version(

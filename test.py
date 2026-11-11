@@ -16,12 +16,14 @@ import os
 import random
 from collections import Counter
 from datetime import UTC, datetime
+from pathlib import Path
 from statistics import mean, median, stdev
 from urllib.parse import parse_qs, urlparse
 
 import requests
 
 from bypass import ReCaptchaV3Bypass as ReCaptchaV3BypassBase
+from bypass import anchor_url_for_site_key
 from bypass_synthetic import ReCaptchaV3SyntheticBypass
 
 # --- 2captcha demo ---
@@ -48,6 +50,28 @@ VERIFY_2CAPTCHA_ENTERPRISE = (
 )
 
 
+# --- recaptcha-demo.appspot.com ---
+ANCHOR_APPSPOT = (
+    "https://www.google.com/recaptcha/api2/anchor?ar=1"
+    "&k=6LdKlZEpAAAAAAOQjzC2v_d36tWxCl6dWsozdSy9"
+    "&co=aHR0cHM6Ly9yZWNhcHRjaGEtZGVtby5hcHBzcG90LmNvbTo0NDM."
+    "&hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&size=invisible"
+    "&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=jcjayngl1lq"
+)
+VERIFY_APPSPOT = "https://recaptcha-demo.appspot.com/recaptcha-v3-verify.php"
+
+
+# --- nextcaptcha.com ---
+ANCHOR_NEXTCAPTCHA = (
+    "https://www.google.com/recaptcha/api2/anchor?ar=1"
+    "&k=6LcVYwIqAAAAAL0eGyLRnmbBmqUmjix5uAeRIrle"
+    "&co=aHR0cHM6Ly9uZXh0Y2FwdGNoYS5jb206NDQz"
+    "&hl=en&v=0lEGiwO4Qwx5R9ArxUy0mBpf&size=invisible"
+    "&anchor-ms=20000&execute-ms=30000&ovv=CADq00gF&cb=skuxicpnyz0v"
+)
+VERIFY_NEXTCAPTCHA = "https://next.nextcaptcha.com/api/captcha-demo/recaptcha_v2/verify"
+
+
 ADAPTERS = (
     ("base", ReCaptchaV3BypassBase),
     ("synthetic", ReCaptchaV3SyntheticBypass),
@@ -70,19 +94,36 @@ RANDOM_ACTIONS = (
 )
 
 SITES = (
+    # 2captcha demos stay disabled: both accepted fabricated tokens and an invalid
+    # site key (checked 2026-11-11). Identical inputs returned different scores
+    # and fresh timestamps, so their results cannot establish token validity.
+    # {
+    #     "name": "2captcha",
+    #     "anchor": ANCHOR_2CAPTCHA,
+    #     "action": "demo_action",
+    #     "verify_type": "2captcha",
+    #     "verify_url": VERIFY_2CAPTCHA,
+    # },
+    # {
+    #     "name": "2captcha-enterprise",
+    #     "anchor": ANCHOR_2CAPTCHA_ENTERPRISE,
+    #     "action": "demo_action",
+    #     "verify_type": "2captcha-enterprise",
+    #     "verify_url": VERIFY_2CAPTCHA_ENTERPRISE,
+    # },
     {
-        "name": "2captcha",
-        "anchor": ANCHOR_2CAPTCHA,
-        "action": "demo_action",
-        "verify_type": "2captcha",
-        "verify_url": VERIFY_2CAPTCHA,
+        "name": "appspot",
+        "anchor": ANCHOR_APPSPOT,
+        "action": "examples/v3scores",
+        "verify_type": "appspot",
+        "verify_url": VERIFY_APPSPOT,
     },
     {
-        "name": "2captcha-enterprise",
-        "anchor": ANCHOR_2CAPTCHA_ENTERPRISE,
-        "action": "demo_action",
-        "verify_type": "2captcha-enterprise",
-        "verify_url": VERIFY_2CAPTCHA_ENTERPRISE,
+        "name": "nextcaptcha",
+        "anchor": ANCHOR_NEXTCAPTCHA,
+        "action": "login",
+        "verify_type": "nextcaptcha",
+        "verify_url": VERIFY_NEXTCAPTCHA,
     },
 )
 
@@ -91,7 +132,18 @@ def site_key_from(anchor_url: str) -> str:
     return parse_qs(urlparse(anchor_url).query)["k"][0]
 
 
-def verify_token(site: dict[str, str], token: str) -> dict:
+def verify_token(site: dict[str, str], token: str, action: str) -> dict:
+    if site["verify_type"] == "google-enterprise":
+        from local_recaptcha.check import assess, summarize
+
+        data = summarize(assess(token, action), action)
+        return {
+            "score": data["score"],
+            "success": bool(
+                data["valid"] and data["hostname_matches"] and data["action_matches"]
+            ),
+        }
+
     if site["verify_type"] == "2captcha":
         resp = requests.post(
             site["verify_url"],
@@ -118,6 +170,39 @@ def verify_token(site: dict[str, str], token: str) -> dict:
             "success": bool(
                 data.get("success") and data.get("tokenProperties", {}).get("valid")
             ),
+        }
+
+    if site["verify_type"] == "appspot":
+        resp = requests.get(
+            site["verify_url"],
+            params={"action": action, "token": token},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "score": data.get("score"),
+            "success": bool(data.get("success")),
+        }
+
+    if site["verify_type"] == "nextcaptcha":
+        resp = requests.post(
+            site["verify_url"],
+            json={
+                "siteKey": site_key_from(site["anchor"]),
+                "gRecaptchaResponse": token,
+            },
+            headers={
+                "Origin": "https://nextcaptcha.com",
+                "Referer": "https://nextcaptcha.com/",
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "score": data.get("score"),
+            "success": bool(data.get("success")),
         }
 
     raise ValueError(f"unsupported verify type: {site['verify_type']}")
@@ -147,7 +232,7 @@ def run_once(
     print(f"token: {token[:60]}...")
 
     try:
-        data = verify_token(site, token)
+        data = verify_token(site, token, action)
     except (requests.RequestException, ValueError) as exc:
         print(f"verify error: {exc}")
         return {
@@ -309,7 +394,25 @@ def save_results(results: dict[tuple[str, str], list[dict]]) -> None:
 def main() -> None:
     os.makedirs(RESULTS_DIR, exist_ok=True)
     results = {}
-    for site in SITES:
+    sites = list(SITES)
+    if Path(__file__).with_name("local_recaptcha").joinpath("settings.py").is_file():
+        from local_recaptcha import settings
+
+        for name in ("PROJECT_ID", "API_KEY"):
+            value = getattr(settings, name)
+            if not value or value.startswith("REPLACE_"):
+                raise ValueError(f"Set {name} in local_recaptcha/settings.py first")
+        sites.append(
+            {
+                "name": "own-enterprise",
+                "anchor": anchor_url_for_site_key(
+                    settings.SITE_KEY, settings.ORIGIN, enterprise=True
+                ),
+                "action": settings.ACTION,
+                "verify_type": "google-enterprise",
+            }
+        )
+    for site in sites:
         if RANDOMIZE_ACTIONS:
             actions = [random.choice(RANDOM_ACTIONS) for _ in range(RUNS)]
         else:

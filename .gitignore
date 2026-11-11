@@ -185,3 +185,6 @@ tests/fixtures/*
 
 # Test run results
 results/
+
+# Private local reCAPTCHA settings and tests
+/local_recaptcha/
